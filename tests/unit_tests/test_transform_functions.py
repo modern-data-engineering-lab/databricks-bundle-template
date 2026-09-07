@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col
@@ -16,7 +18,13 @@ from src.helpers import transform_functions
 
 @pytest.fixture(scope="session")
 def spark():
-    return SparkSession.builder.master("local[2]").appName("unit-tests").getOrCreate()
+    # On Databricks (including serverless), a Spark Connect session is already configured via
+    # env vars before this code runs — explicitly setting a local master would conflict with
+    # it. Only force local[2] when running outside Databricks (e.g. in GitHub Actions CI).
+    builder = SparkSession.builder.appName("unit-tests")
+    if "DATABRICKS_RUNTIME_VERSION" not in os.environ:
+        builder = builder.master("local[2]")
+    return builder.getOrCreate()
 
 
 def test_get_orders_schema_matches_expected():
