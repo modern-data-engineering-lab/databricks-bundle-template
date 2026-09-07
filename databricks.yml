@@ -1,0 +1,53 @@
+###########################################################################################
+# Main Databricks Asset Bundle configuration.
+#
+# This bundle deploys a small, deliberately generic ETL project (orders bronze/silver/gold
+# via a Lakeflow Declarative Pipeline, plus a job that runs unit tests, the pipeline, and a
+# report notebook). The point of this repo isn't the ETL itself — it's the deployment shape:
+# dev/staging/prod targets, variable overrides per target, and a working CI/CD workflow.
+#
+# Fork this repo (or copy resources/ + databricks.yml) as the starting point for a new
+# Databricks project instead of hand-rolling bundle config from scratch each time.
+#
+# See https://docs.databricks.com/dev-tools/bundles/index.html for documentation.
+###########################################################################################
+
+bundle:
+  name: databricks_bundle_template
+
+include:
+  - "./resources/variables.yml"
+  - "./resources/pipeline/example_etl_pipeline.pipeline.yml"
+  - "./resources/job/etl_workflow.job.yml"
+
+targets:
+  dev:
+    # Deployed resources are prefixed with '[dev <user>]' and job schedules/triggers are
+    # paused by default — see https://docs.databricks.com/dev-tools/bundles/deployment-modes.html
+    mode: development
+    default: true
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: dev_catalog
+
+  staging:
+    mode: development
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: staging_catalog
+
+  prod:
+    mode: production
+    workspace:
+      # Deploy under a shared path, not a personal user folder, so production doesn't
+      # depend on any one person's workspace identity.
+      root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: prod_catalog
+      notification_email: data-alerts@example.com
+    # In a real workspace, swap this for an actual deployed service principal so prod
+    # doesn't run as whichever human last deployed it.
+    run_as:
+      service_principal_name: svc-databricks-bundle-template

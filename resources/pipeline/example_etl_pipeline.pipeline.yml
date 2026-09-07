@@ -1,0 +1,22 @@
+######################################
+# Lakeflow Declarative Pipeline (SDP) #
+######################################
+resources:
+  pipelines:
+    example_etl_pipeline:
+      name: example_etl_pipeline_${bundle.target}
+      catalog: ${var.catalog}
+      schema: ${var.schema}
+      serverless: true
+      photon: true
+      root_path: ../../src/pipelines
+      libraries:
+        - glob:
+            include: ../../src/pipelines/ingest_bronze_silver.py
+        - glob:
+            include: ../../src/pipelines/gold_tables.sql
+        - glob:
+            include: ../../tests/integration_test/integration_tests_pipeline.py
+      configuration:
+        target: ${bundle.target}
+        raw_data_path: ${var.raw_data_path}
