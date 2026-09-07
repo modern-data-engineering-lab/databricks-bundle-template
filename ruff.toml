@@ -3,3 +3,11 @@ target-version = "py310"
 
 [lint]
 select = ["E", "F", "I"]
+# `spark` and `dbutils` are injected by the Databricks runtime into every notebook;
+# ruff can't see that, so declare them as known globals instead of stubbing them out.
+builtins = ["spark", "dbutils"]
+
+[lint.per-file-ignores]
+# Databricks notebook cells require `%pip install` + `dbutils.library.restartPython()`
+# to run before the imports that depend on the freshly installed package.
+"run_unit_tests.py" = ["E402"]

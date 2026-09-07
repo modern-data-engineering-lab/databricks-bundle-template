@@ -12,16 +12,17 @@
 # - Expectation recommendations and advanced patterns:
 #   https://docs.databricks.com/en/delta-live-tables/expectation-patterns.html
 
-from pyspark import pipelines as dp
-import pyspark.sql.functions as F
-
 import sys
+
+import pyspark.sql.functions as F
+from pyspark import pipelines as dp
 
 sys.path.append("../.")
 from helpers import transform_functions
 
-# Set via the pipeline's `configuration` block in resources/pipeline/example_etl_pipeline.pipeline.yml,
-# so this same notebook runs unmodified against dev, staging, or prod.
+# Set via the pipeline's `configuration` block in
+# resources/pipeline/example_etl_pipeline.pipeline.yml, so this notebook runs unmodified
+# against dev, staging, or prod.
 target = spark.conf.get("target")
 raw_data_path = spark.conf.get("raw_data_path")
 
