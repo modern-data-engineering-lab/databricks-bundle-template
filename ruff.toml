@@ -1,11 +1,11 @@
 line-length = 100
 target-version = "py310"
-
-[lint]
-select = ["E", "F", "I"]
 # `spark` and `dbutils` are injected by the Databricks runtime into every notebook;
 # ruff can't see that, so declare them as known globals instead of stubbing them out.
 builtins = ["spark", "dbutils"]
+
+[lint]
+select = ["E", "F", "I"]
 
 [lint.per-file-ignores]
 # Databricks notebook cells require `%pip install` + `dbutils.library.restartPython()`
