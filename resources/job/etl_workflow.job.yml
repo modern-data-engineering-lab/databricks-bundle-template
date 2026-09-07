@@ -1,0 +1,43 @@
+######################################
+# Job: unit tests -> pipeline -> report
+######################################
+# Notebook paths are relative to the folder this YAML file lives in.
+resources:
+  jobs:
+    etl_workflow:
+      name: etl_workflow_${bundle.target}
+      description: Runs the unit test suite, then the bronze/silver/gold pipeline, then a downstream report notebook.
+      email_notifications:
+        on_failure:
+          - ${var.notification_email}
+      tasks:
+        - task_key: unit_tests
+          notebook_task:
+            notebook_path: ../../run_unit_tests.py
+            source: WORKSPACE
+          description: Run the unit test suite before touching any data.
+
+        - task_key: run_pipeline
+          depends_on:
+            - task_key: unit_tests
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.example_etl_pipeline.id}
+            full_refresh: false
+          description: Run the bronze/silver/gold Lakeflow Declarative Pipeline.
+
+        - task_key: publish_report
+          depends_on:
+            - task_key: run_pipeline
+          notebook_task:
+            notebook_path: ../../src/reporting/summary_report.py
+            base_parameters:
+              catalog_name: ${var.catalog}
+              schema_name: ${var.schema}
+            source: WORKSPACE
+          description: Example downstream consumer reading the gold table.
+
+      parameters:
+        - name: target
+          default: ${bundle.target}
+        - name: catalog_name
+          default: ${var.catalog}

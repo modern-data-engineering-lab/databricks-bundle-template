@@ -1,0 +1,21 @@
+variables:
+  catalog:
+    description: >
+      Unity Catalog catalog to deploy tables into for this target. Overridden per
+      target in databricks.yml (dev_catalog / staging_catalog / prod_catalog) — change
+      those defaults to match catalogs that actually exist in your workspace.
+    default: dev_catalog
+
+  schema:
+    description: Schema (database) within the catalog to write tables into.
+    default: bundle_template
+
+  raw_data_path:
+    description: >
+      Unity Catalog volume path containing the raw source CSVs to ingest. Derived from
+      catalog/schema so it moves automatically with the target.
+    default: /Volumes/${var.catalog}/${var.schema}/raw
+
+  notification_email:
+    description: Email address for job-failure notifications.
+    default: changeme@example.com
