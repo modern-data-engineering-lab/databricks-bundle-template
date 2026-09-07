@@ -35,8 +35,9 @@ target_integration_tests_validation = {
 }
 
 if target in target_integration_tests_validation:
-    total_expected_bronze = target_integration_tests_validation[target]["orders_bronze"]["total_rows"]
-    total_expected_silver = target_integration_tests_validation[target]["orders_silver"]["total_rows"]
+    expected_counts = target_integration_tests_validation[target]
+    total_expected_bronze = expected_counts["orders_bronze"]["total_rows"]
+    total_expected_silver = expected_counts["orders_silver"]["total_rows"]
 
 # COMMAND ----------
 
