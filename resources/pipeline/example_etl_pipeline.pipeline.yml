@@ -9,7 +9,9 @@ resources:
       schema: ${var.schema}
       serverless: true
       photon: true
-      root_path: ../../src/pipelines
+      # Bundle root, not src/pipelines — a pipeline only reliably syncs library files that
+      # live under its own root_path, and the integration test lives outside src/pipelines.
+      root_path: ../..
       libraries:
         - glob:
             include: ../../src/pipelines/ingest_bronze_silver.py
