@@ -47,7 +47,7 @@ targets:
     variables:
       catalog: prod_catalog
       notification_email: data-alerts@example.com
-    # In a real workspace, swap this for an actual deployed service principal so prod
-    # doesn't run as whichever human last deployed it.
+    # Must match the actual service principal created in Getting Started step 3 — the job
+    # runs as this identity regardless of who/what deploys the bundle.
     run_as:
-      service_principal_name: svc-databricks-bundle-template
+      service_principal_name: sp-databricks-bundle-template-prod
