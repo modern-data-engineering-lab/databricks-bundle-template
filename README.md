@@ -97,8 +97,8 @@ run or (worse) silently corrupting silver — the middle ground a real pipeline 
 
 ## Stack
 
-Databricks Asset Bundles · Lakeflow Declarative Pipelines (SDP) · Unity Catalog · GitHub
-Actions · pytest
+Databricks Asset Bundles · Lakeflow Declarative Pipelines (SDP) · Unity Catalog · Terraform ·
+GitHub Actions · pytest
 
 ## Repository layout
 
@@ -173,6 +173,31 @@ git push -u origin stg
 used elsewhere in this portfolio's real AWS infra (not the more common `develop`/`main`), so
 pick whichever convention your own team already uses and rename consistently in the workflow
 file if it differs.
+
+### Two ways to do steps 2–6: Terraform or manual
+
+Steps 2–6 below (catalogs, schemas, volumes, service principals, catalog grants, GitHub
+environments, the production approval gate) provision the *platform layer* — everything that
+has to exist before `databricks bundle deploy` has anywhere to deploy to. There are two ways
+to get there, producing the identical end state:
+
+- **Terraform (recommended)** — `cd terraform && cat README.md`, follow that end to end, then
+  skip ahead to step 7 (secrets) below. This is what a real team would actually do — Asset
+  Bundles are deliberately not meant to provision catalogs or service principals, the same way
+  a Kubernetes Deployment isn't meant to provision the cluster it runs on. See the "Design
+  decisions" note on this split near the top of this README, and `terraform/README.md` for
+  the full rationale on what's Terraform-managed vs. still manual (secrets, by default) and
+  why.
+- **Manual (steps 2–6 below)** — do this once even if you'll use Terraform for real work
+  afterward. Clicking through it yourself is what actually explains *why* each piece exists,
+  which `terraform apply` running quietly in a terminal doesn't — the two are equivalent in
+  outcome, not in what you learn getting there.
+
+Don't do both against the same workspace — pick one path per environment, since running the
+manual steps and then `terraform apply` (or vice versa) against the same catalog/service
+principal names will collide (Terraform expects to create resources that don't exist yet, not
+adopt ones you made by hand — see "If you already did the manual setup" in
+`terraform/README.md` if you want to migrate from one path to the other).
 
 ### 2. Databricks: create the catalogs, schemas, and volumes
 
@@ -452,6 +477,40 @@ identity rather than a service principal, useful for quick iteration without tou
 - A deployment scaffold generic enough to fork: swap `src/pipelines/` and
   `resources/*.yml` for your own domain and the dev/staging/prod/CI shape carries over
   unchanged
+- The platform layer (catalogs, schemas, service principals, grants, GitHub environments) as
+  actual Terraform, not manual clicks written up as if they were infrastructure-as-code — with
+  the DABs-vs-Terraform responsibility split made explicit, not blurred
+
+## Where this fits in the portfolio
+
+This repo is the second one built in `modern-data-engineering-lab`, and it's infrastructure
+for the rest of the org more than a project in its own right — most of what's here exists to
+be forked or copied, not run as-is:
+
+- **[`shared-databricks-utils`](https://github.com/modern-data-engineering-lab/shared-databricks-utils)**
+  is its sibling: that repo is the Python utilities every Databricks job imports (logging,
+  config, schema validation, retry/backoff); this repo is what deploys the job that imports
+  them. Neither is useful alone for a real project — a pipeline needs both shared code *and*
+  a deployment story.
+- **`finance-lakehouse-platform`** (the portfolio's flagship, planned next after the simpler
+  AWS/GCP repos) is meant to fork this repo's `databricks.yml` + `resources/` + `terraform/` +
+  `.github/workflows/ci-cd.yml` shape wholesale, then swap `src/pipelines/` for a real
+  medallion build and add the governance/CDC/performance layers that repo's scope calls for.
+  Every bug fixed here (the `ruff.toml` `builtins` placement, the Spark Connect conflict, the
+  notebook-vs-plain-file sync race, the `run_as` UUID gotcha) is a bug that repo now starts
+  without, instead of rediscovering independently.
+- **`databricks-observability-framework`** and **`streaming-pipeline-kafka-databricks`** are
+  both Databricks-deploying repos too, and are expected to follow the same `stg`/`main` branch
+  convention, the same environment/secret/service-principal pattern, and the same
+  Terraform-for-platform / DABs-for-workload split established here — not because this repo
+  mandates it, but because reinventing it per-repo is exactly the wasted effort the "Problem"
+  section at the top of this README describes, and because a hiring manager clicking through
+  three repos that each do deployment differently reads as inexperience, not variety.
+- More generally: **any future Databricks repo in this org should start by reading this one**,
+  not by writing a `databricks.yml` from scratch. Fork what applies, deviate deliberately where
+  a project's actual requirements differ, and note *why* in that repo's own README when you do
+  — the same way this repo's Troubleshooting section explains every deviation from the
+  Databricks Academy course material it started from.
 
 ## Where this came from
 
