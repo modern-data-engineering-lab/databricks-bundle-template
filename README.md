@@ -205,6 +205,10 @@ For each one, open it and click **Generate secret** — this shows the **Client 
 labeled "Application ID"/"service principal UUID", and permanently visible on the SP's page
 afterward) and the **Secret** (shown exactly once, at generation time — copy it immediately).
 
+**Copy the prod SP's Client ID somewhere you can find it again** — you'll need it in step 10
+for `databricks.yml`'s `run_as`, which (despite the field's name) needs this UUID, not the
+display name you just typed in.
+
 **Why two, not one:** the whole point of splitting them is that a compromised or misused
 staging credential should never be able to touch production data. That guarantee comes from
 the catalog grant in the next step, not from the workspace itself (since both SPs live in the
@@ -334,13 +338,16 @@ production path, not just "same thing, different catalog":
   in the Actions UI until someone approves it, since `main` also auto-*runs* the job after
   deploying (`databricks bundle run etl_workflow -t prod` — see `ci-cd.yml`), not just uploads
   files like staging does.
-- **The job runs as the prod service principal, not whoever deployed it** — `databricks.yml`'s
-  `prod` target sets `run_as: service_principal_name: sp-databricks-bundle-template-prod`
-  explicitly. This name **must match exactly** what you named the service principal in step 3;
-  a mismatch here is a real bug this template shipped with at one point (an unrelated
-  placeholder name that didn't match any real service principal) — `databricks bundle
-  validate -t prod` catches it before a broken deploy, which is worth running locally before
-  ever pushing to `main`.
+- **The job runs as the prod service principal, not whoever deployed it** —
+  `databricks.yml`'s `prod` target sets `run_as: service_principal_name: <uuid>` explicitly.
+  This is a real, confirmed gotcha: despite the field's name, it needs the service
+  principal's **Application ID (a UUID)** from step 3, not its display name — a display name
+  passes `databricks bundle validate -t prod` (schema-only check, no API call) but fails the
+  *real* `bundle deploy` with `cannot be set as run_as service principal, because it doesn't
+  exist`, since only the actual deploy resolves that value against the workspace. Verified by
+  hitting exactly this in CI: `bundle validate` was clean locally, then the real deploy failed
+  with that error until the value was swapped for the Application ID. Replace the UUID in
+  `databricks.yml` with your own prod service principal's Client ID.
 - **No `[dev ...]` prefix, and the deploy path is shared, not personal** — `mode: production`
   deploys under `/Workspace/Shared/.bundle/databricks_bundle_template/prod` (see the `prod`
   target's `workspace.root_path`), specifically so production doesn't live under any one
@@ -403,6 +410,14 @@ third case is "probably the same issue, failing silently."
   referenced as **pipeline libraries**; a job's own notebook *tasks* (`run_unit_tests.py`,
   `src/reporting/summary_report.py`) use a different, unaffected sync path and can keep the
   notebook header.
+- **Prod deploy fails with `cannot be set as run_as service principal, because it doesn't
+  exist`, even though the service principal genuinely exists** — `databricks.yml`'s
+  `run_as: service_principal_name` field needs the service principal's **Application ID
+  (UUID)**, not its display name, despite the field's name suggesting otherwise. A display
+  name passes `databricks bundle validate` (schema-only, no API call) but fails the real
+  `bundle deploy`, which does resolve it against the workspace. Use the Client ID shown on
+  the service principal's page (Getting Started step 3), not the name you gave it when
+  creating it.
 
 ## How to run locally
 
