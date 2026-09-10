@@ -240,11 +240,16 @@ to `main` to exercise the same path end-to-end against `prod_catalog`.
   unconditionally conflicts with it. Only force a local master when
   `DATABRICKS_RUNTIME_VERSION` isn't in the environment (see the `spark` fixture in
   `tests/unit_tests/test_transform_functions.py`).
-- **Pipeline fails at initialization with `LIBRARY_FILE_NOT_FOUND`** — a Lakeflow pipeline only
-  reliably syncs library files that live under its own `root_path`. If a `libraries[].glob`
-  entry points outside that tree (e.g. a test file in a sibling `tests/` directory), widen
-  `root_path` to cover it (here, the bundle root) rather than leaving it scoped to one
-  subdirectory.
+- **Pipeline fails at initialization with `LIBRARY_FILE_NOT_FOUND`, one library file 404s via
+  the Workspace API on serverless compute even though it deployed to disk** — widening the
+  pipeline's `root_path` to also *cover* an outside file (e.g. `../..` instead of
+  `../../src/pipelines`) did **not** fix this; the same file still 404'd on the next run. What
+  actually fixed it was moving the file itself to physically live inside `src/pipelines/`
+  alongside every other pipeline library file, rather than reaching it via `../../` from a
+  separate top-level directory like `tests/`. Keep every file a pipeline references as a
+  library physically co-located under one directory, not spread across the repo and pointed at
+  via relative paths — a `root_path` config change alone isn't enough on Free Edition
+  serverless compute.
 
 ## How to run locally
 
