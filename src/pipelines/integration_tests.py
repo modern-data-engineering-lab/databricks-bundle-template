@@ -21,17 +21,19 @@ import dlt
 
 target = spark.conf.get("target")
 
-# Expected row counts for the bundled sample data (sample_data/orders_sample.csv, 20 rows)
-# in each non-prod target. Update these if you swap in your own sample data — staging is
-# assumed to hold a larger duplicate of the same shape.
+# Expected row counts for the bundled sample data (sample_data/orders_sample.csv, 20 rows),
+# same file uploaded to both the dev and staging raw volumes in Getting Started. If you
+# upload a differently-sized (or differently-shaped) file to staging's volume, update the
+# staging counts here to match — this is asserting against whatever is actually in the volume,
+# not a fixed expectation independent of it.
 target_integration_tests_validation = {
     "dev": {
         "orders_bronze": {"total_rows": 20},
         "orders_silver": {"total_rows": 20},
     },
     "staging": {
-        "orders_bronze": {"total_rows": 200},
-        "orders_silver": {"total_rows": 200},
+        "orders_bronze": {"total_rows": 20},
+        "orders_silver": {"total_rows": 20},
     },
 }
 
