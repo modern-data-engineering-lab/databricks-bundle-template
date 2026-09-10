@@ -9,16 +9,19 @@ resources:
       schema: ${var.schema}
       serverless: true
       photon: true
-      # Bundle root, not src/pipelines — a pipeline only reliably syncs library files that
-      # live under its own root_path, and the integration test lives outside src/pipelines.
-      root_path: ../..
+      # All library files below live directly under this root_path — widening root_path to
+      # the bundle root (tried previously) did not fix a LIBRARY_FILE_NOT_FOUND error for a
+      # file living outside src/pipelines; moving the file itself in here did. Keep every
+      # pipeline library file physically co-located here, not reached via a separate ../../
+      # path into another top-level directory.
+      root_path: ../../src/pipelines
       libraries:
         - glob:
             include: ../../src/pipelines/ingest_bronze_silver.py
         - glob:
             include: ../../src/pipelines/gold_tables.sql
         - glob:
-            include: ../../tests/integration_test/integration_tests_pipeline.py
+            include: ../../src/pipelines/integration_tests.py
       configuration:
         target: ${bundle.target}
         raw_data_path: ${var.raw_data_path}
