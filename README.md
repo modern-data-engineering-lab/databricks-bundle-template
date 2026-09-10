@@ -240,16 +240,29 @@ to `main` to exercise the same path end-to-end against `prod_catalog`.
   unconditionally conflicts with it. Only force a local master when
   `DATABRICKS_RUNTIME_VERSION` isn't in the environment (see the `spark` fixture in
   `tests/unit_tests/test_transform_functions.py`).
-- **Pipeline fails at initialization with `LIBRARY_FILE_NOT_FOUND`, one library file 404s via
-  the Workspace API on serverless compute even though it deployed to disk** — widening the
-  pipeline's `root_path` to also *cover* an outside file (e.g. `../..` instead of
-  `../../src/pipelines`) did **not** fix this; the same file still 404'd on the next run. What
-  actually fixed it was moving the file itself to physically live inside `src/pipelines/`
-  alongside every other pipeline library file, rather than reaching it via `../../` from a
-  separate top-level directory like `tests/`. Keep every file a pipeline references as a
-  library physically co-located under one directory, not spread across the repo and pointed at
-  via relative paths — a `root_path` config change alone isn't enough on Free Edition
-  serverless compute.
+- **Pipeline fails at initialization with `LIBRARY_FILE_NOT_FOUND`, and it's a *different*
+  library file each run** — confirmed via `databricks workspace list` and the pipeline's own
+  event log (`databricks pipelines list-pipeline-events`), not guessed. Two things were tried
+  and did **not** fix it: widening the pipeline's `root_path` to cover the file from outside
+  its directory, and physically co-locating the file inside `src/pipelines/` alongside the
+  other library files. The run kept failing — on `ingest_bronze_silver.py` one run, a
+  different file the next — even with every file confirmed to genuinely exist in the
+  workspace at the time.
+  The actual mechanism: Asset Bundles convert any `.py` file starting with
+  `# Databricks notebook source` into a **NOTEBOOK** workspace object on sync (the `.py`
+  extension gets stripped from its stored path — confirmed via `databricks workspace list`).
+  A plain file with no such header (like a `.sql` library with no notebook markers) skips that
+  conversion and is stored as a plain `FILE` instead. Every failure was on a NOTEBOOK-typed
+  library; the `.sql` file never once failed. The conversion step appears to have a
+  propagation race that a pipeline's library loader can outrun on Free Edition serverless
+  compute — a real fetch is issued before the converted notebook is fully visible via the
+  Workspace API.
+  **Fix:** don't give pipeline library `.py` files a `# Databricks notebook source` header —
+  keep them as plain `.py` files (`src/pipelines/ingest_bronze_silver.py` and
+  `src/pipelines/integration_tests.py` are written this way now). This only applies to files
+  referenced as **pipeline libraries**; a job's own notebook *tasks* (`run_unit_tests.py`,
+  `src/reporting/summary_report.py`) use a different, unaffected sync path and can keep the
+  notebook header.
 
 ## How to run locally
 
