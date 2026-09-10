@@ -509,14 +509,5 @@ be forked or copied, not run as-is:
 - More generally: **any future Databricks repo in this org should start by reading this one**,
   not by writing a `databricks.yml` from scratch. Fork what applies, deviate deliberately where
   a project's actual requirements differ, and note *why* in that repo's own README when you do
-  — the same way this repo's Troubleshooting section explains every deviation from the
-  Databricks Academy course material it started from.
-
-## Where this came from
-
-Adapted from the "Full Project" example in Databricks Academy's *Automated Deployment with
-Declarative Automation Bundles* course, generalized away from the original lab's domain
-dataset and lab-specific cluster lookups, with the GitHub Actions deploy workflow (the course
-only lectures on the branch strategy — it doesn't ship the YAML) added on top. See
-[`../BUILD-GUIDE.md`](../BUILD-GUIDE.md) for the full source-material inventory behind this
-portfolio.
+  — the same way this repo's Troubleshooting section documents every real bug hit and fixed,
+  not just the happy path.
