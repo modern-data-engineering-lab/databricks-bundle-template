@@ -47,7 +47,11 @@ targets:
     variables:
       catalog: prod_catalog
       notification_email: data-alerts@example.com
-    # Must match the actual service principal created in Getting Started step 3 — the job
-    # runs as this identity regardless of who/what deploys the bundle.
+    # Despite the field name, this must be the service principal's Application ID (a UUID —
+    # shown as "Client ID" on its page), not its display name. `bundle validate` won't catch
+    # a wrong value here since it's schema-only; only a real `bundle deploy` resolves it
+    # against the workspace and fails with "cannot be set as run_as service principal,
+    # because it doesn't exist" if it's a display name or doesn't match. Replace this with
+    # YOUR prod service principal's own Application ID from Getting Started step 3.
     run_as:
-      service_principal_name: sp-databricks-bundle-template-prod
+      service_principal_name: 2be2a270-a0ed-44fa-8810-1b869f8d6cc3
