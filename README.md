@@ -39,10 +39,108 @@ skipping them is how projects end up hand-deployed from a laptop indefinitely.
 `stg` deploys to the `staging` target, `main` deploys to `prod` — both gated behind the
 `test` job (lint + unit tests) so nothing broken reaches a real workspace.
 
+### Design decisions (the *why* behind the *what*)
+
+**Why three targets (`dev`/`staging`/`prod`), not one.** A `databricks.yml` with a single
+target only ever gets tested by whoever's laptop deployed it last. Three targets forces every
+variable that differs between environments — catalog, schema path, notification email — to be
+declared explicitly instead of hardcoded, which is what actually makes a deploy to prod safe:
+the *shape* of what gets deployed is identical to what already ran in staging, only the
+target-specific variables differ.
+
+**Why `mode: development` for `dev`/`staging` but `mode: production` for `prod`.** Development
+mode does three things: it prefixes every deployed resource name with `[dev <identity>]`
+(so ten people's dev deployments in one workspace never collide), it pauses job
+schedules/triggers by default (so a dev deploy never fires on a real cron), and it scopes the
+deploy to whoever ran it (see `run_as` note below). None of that is appropriate for prod — a
+production job needs a stable name, an active schedule, and to run as a fixed identity
+regardless of who happened to push the deploying commit. That's what `mode: production` turns
+off.
+
+**Why `run_as: service_principal_name` is set explicitly on `prod` but not on `staging`.**
+In development mode, the deploy always runs as whoever deployed it — setting `run_as` there
+would be ignored. In production mode, without an explicit `run_as`, the job would run as
+whichever human or service principal happens to deploy it that day, which is exactly the kind
+of implicit, person-dependent behavior a "senior data engineer" repo shouldn't demonstrate.
+Pinning it to a service principal means the job's identity is a property of the *bundle*, not
+of whoever last ran `git push`.
+
+**Why serverless compute, not a classic cluster.** No cluster to size, configure, or leave
+running (and billing) by accident — the pipeline and every job task request compute on demand
+and release it when done. The tradeoff, documented at length in Troubleshooting below, is that
+serverless's Spark Connect model and its own file-sync quirks are less forgiving of code
+patterns that assume a classic local Spark session or notebook semantics.
+
+**Why the job chains `unit_tests → run_pipeline → publish_report`, in that order, with hard
+dependencies.** Running the pipeline against bad transform logic wastes real compute and can
+leave partially-written tables behind; failing fast in `unit_tests` (pure Python, no data
+touched) costs seconds, not minutes. `publish_report` depends on `run_pipeline` for the same
+reason in reverse — there's no point reading a gold table that a failed pipeline never
+finished writing. `run_if: ALL_SUCCESS` (the default) on each task is what turns "depends_on"
+into an actual gate rather than just a display order.
+
+**Why there are two layers of tests, not one.** `tests/unit_tests/` (pytest, local Spark
+session, no workspace needed) catches logic bugs in `src/helpers/transform_functions.py`
+before anything touches a workspace — fast, free, runs in GitHub Actions on every push.
+`src/pipelines/integration_tests.py` (Lakeflow expectations, runs *inside* the deployed
+pipeline) catches a different class of bug: things that are only wrong once real data flows
+through — a schema mismatch in the actual CSV, an Auto Loader path pointing at the wrong
+volume, an expectation that's too strict for the real data's shape. Unit tests can't catch
+that category at all, since nothing in them touches a real table.
+
+**Why Auto Loader + expectations for bronze, not a plain batch read.** `cloudFiles` (Auto
+Loader) tracks which files it's already ingested, so re-running the pipeline doesn't
+re-process the whole volume — the same pattern a real production ingestion job needs, not a
+toy `spark.read.csv()` that reads everything every time. `@dp.expect_all_or_drop` on bronze
+means a malformed row gets silently dropped and counted, rather than either crashing the whole
+run or (worse) silently corrupting silver — the middle ground a real pipeline needs.
+
 ## Stack
 
 Databricks Asset Bundles · Lakeflow Declarative Pipelines (SDP) · Unity Catalog · GitHub
 Actions · pytest
+
+## Repository layout
+
+```
+databricks.yml                        Bundle entry point: targets (dev/staging/prod),
+                                       per-target variables, run_as for prod. Start here.
+resources/
+  variables.yml                       Variable declarations + defaults (catalog, schema,
+                                       raw_data_path, notification_email). Per-target
+                                       overrides live in databricks.yml, not here.
+  job/etl_workflow.job.yml            The job: unit_tests -> run_pipeline -> publish_report,
+                                       with hard depends_on/run_if gates between each.
+  pipeline/example_etl_pipeline.pipeline.yml
+                                       The Lakeflow pipeline: which files are its libraries,
+                                       which catalog/schema/volume it targets, root_path.
+src/
+  helpers/transform_functions.py      Pure functions (schema, region/band mapping) — no
+                                       pipeline decorators, no Databricks-only globals. This
+                                       is what tests/unit_tests/ actually exercises.
+  pipelines/ingest_bronze_silver.py   Bronze (Auto Loader + expectations) and silver
+                                       (transform) table definitions. Plain .py, not a
+                                       notebook — see Troubleshooting for why that matters.
+  pipelines/gold_tables.sql           Gold materialized view, aggregated from silver.
+  pipelines/integration_tests.py      Runs *inside* the pipeline; asserts on the real tables
+                                       a run produced. Also plain .py, same reason.
+  reporting/summary_report.py         Job notebook task; a stand-in for whatever actually
+                                       consumes the gold table downstream in a real project.
+tests/unit_tests/test_transform_functions.py
+                                       pytest against transform_functions.py — local Spark
+                                       session, no workspace needed, runs in GitHub Actions.
+run_unit_tests.py                     Job notebook task that runs the above suite *inside*
+                                       the workspace, gating the pipeline on it.
+sample_data/orders_sample.csv         20 rows, uploaded to each environment's `raw` volume
+                                       during Getting Started — what Auto Loader reads.
+.github/workflows/ci-cd.yml           lint+test on every push; stg -> deploy-staging,
+                                       main -> deploy-production (+ auto-run), both gated
+                                       behind the test job.
+ruff.toml, pytest.ini, requirements-dev.txt
+                                       Lint/test config — see Troubleshooting for the
+                                       Databricks-specific ruff quirks (builtins, per-file
+                                       E402 ignore for run_unit_tests.py).
+```
 
 ## Getting Started
 
@@ -219,16 +317,58 @@ Your username → **Settings** → **Linked accounts** → link GitHub, then wor
 **Git folders** → **Add repo** → paste this repo's clone URL. Switch branches from the UI's
 branch dropdown to browse `stg` vs `main`.
 
-### 9. First real deploy and run
+### 9. First real deploy and run (staging)
 
 Push any commit to `stg` to trigger `deploy-staging` in CI, then in Databricks: **Jobs &
 Pipelines** → `etl_workflow_staging` → **Run now**. A `[dev <identity>]` prefix on the job name
 is expected — `databricks.yml`'s `staging` target uses `mode: development`, and Asset Bundles
 always prefix development-mode resources this way regardless of the target's own name. Watch
-`unit_tests` → `run_pipeline` → `publish_report` run in sequence; once staging is clean, push
-to `main` to exercise the same path end-to-end against `prod_catalog`.
+`unit_tests` → `run_pipeline` → `publish_report` run in sequence.
+
+### 10. Promoting to production
+
+Once staging is clean, merge/push to `main`. A few things are genuinely different about the
+production path, not just "same thing, different catalog":
+
+- **It's gated behind manual approval** if you did step 6 — the `deploy-production` job pauses
+  in the Actions UI until someone approves it, since `main` also auto-*runs* the job after
+  deploying (`databricks bundle run etl_workflow -t prod` — see `ci-cd.yml`), not just uploads
+  files like staging does.
+- **The job runs as the prod service principal, not whoever deployed it** — `databricks.yml`'s
+  `prod` target sets `run_as: service_principal_name: sp-databricks-bundle-template-prod`
+  explicitly. This name **must match exactly** what you named the service principal in step 3;
+  a mismatch here is a real bug this template shipped with at one point (an unrelated
+  placeholder name that didn't match any real service principal) — `databricks bundle
+  validate -t prod` catches it before a broken deploy, which is worth running locally before
+  ever pushing to `main`.
+- **No `[dev ...]` prefix, and the deploy path is shared, not personal** — `mode: production`
+  deploys under `/Workspace/Shared/.bundle/databricks_bundle_template/prod` (see the `prod`
+  target's `workspace.root_path`), specifically so production doesn't live under any one
+  person's `/Workspace/Users/...` folder. `databricks bundle validate -t prod` will warn that
+  this path is writable by every workspace user by default — fine for a single-user Free
+  Edition workspace, but in a real multi-user workspace you'd add an explicit `CAN_MANAGE`
+  permission block scoped to the deploying service principal (and maybe your platform team),
+  per the warning's own suggestion.
+
+Verify the same way as staging: **Jobs & Pipelines** → `etl_workflow_prod` (no `[dev ...]`
+prefix this time) → check the most recent run, or trigger one with **Run now**.
 
 ### Troubleshooting notes (real errors hit building this template)
+
+These were found by directly inspecting the workspace via the `databricks` CLI — `workspace
+list`/`get-status` to check what actually got synced, `pipelines get`/`list-updates`/
+`list-pipeline-events` to read the pipeline's real deployed config and error events, `jobs
+get-run` for task-level results — rather than relying only on the Databricks UI's error
+summaries or an in-workspace assistant's interpretation of them. That distinction mattered in
+practice: an early diagnosis (from the workspace's built-in AI assistant) concluded bundle-
+deployed files were categorically inaccessible to serverless pipelines, which didn't hold up —
+two of the three library files in the same pipeline, deployed the same way, never failed. The
+CLI-verified pattern (`databricks workspace list` on the affected directory, across runs) is
+what actually found the real, narrower mechanism below. If you hit something similar, prefer
+checking the actual API/CLI state over trusting a single plausible-sounding explanation, however
+confident it sounds — and note when something you tried *didn't* work, not just what did; a
+partial theory that explains 2 of 3 failures usually means the theory is wrong, not that the
+third case is "probably the same issue, failing silently."
 
 - **`ruff` fails with "unknown field `builtins`"** — `builtins` (used to tell ruff that `spark`
   and `dbutils` are injected globals, not undefined names) belongs at the **top level** of
