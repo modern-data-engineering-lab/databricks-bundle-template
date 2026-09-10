@@ -1,7 +1,10 @@
-# Databricks notebook source
 ####################################################
 # Bronze/silver layers for the example orders pipeline
 ####################################################
+# Deliberately a plain .py file, not a "# Databricks notebook source" — Asset Bundles convert
+# notebook-source .py files into NOTEBOOK workspace objects on sync, and that conversion has a
+# propagation race that pipeline library loading can outrun (intermittent
+# LIBRARY_FILE_NOT_FOUND on Free Edition serverless). Plain files skip that conversion.
 # A minimal Lakeflow Declarative Pipeline (formerly DLT) showing expectations, streaming
 # ingestion via Auto Loader, and a silver transform. Deliberately small — this is a
 # deployment-shape template, not a full pipeline reference; see finance-lakehouse-platform

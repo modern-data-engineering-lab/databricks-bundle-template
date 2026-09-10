@@ -1,24 +1,25 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC ## Pipeline integration tests
-# MAGIC
-# MAGIC Runs *inside* the Lakeflow Declarative Pipeline itself (it's registered as a pipeline
-# MAGIC library in `resources/pipeline/example_etl_pipeline.pipeline.yml`), using expectations
-# MAGIC to assert on the actual bronze/silver/gold tables the pipeline just built — not mocks.
-# MAGIC
-# MAGIC In dev/staging this checks exact row counts against the known size of the sample data
-# MAGIC for that target. In prod, row counts vary run to run, so only the gold table's shape is
-# MAGIC checked (i.e. "did this run produce sane categories," not "did it produce N rows").
-# MAGIC
-# MAGIC See: https://docs.databricks.com/en/delta-live-tables/expectation-patterns.html#portable-and-reusable-expectations
-
-# COMMAND ----------
+####################################################
+# Pipeline integration tests
+####################################################
+# Deliberately a plain .py file, not a "# Databricks notebook source" — Asset Bundles convert
+# notebook-source .py files into NOTEBOOK workspace objects on sync, and that conversion has a
+# propagation race that pipeline library loading can outrun (intermittent
+# LIBRARY_FILE_NOT_FOUND on Free Edition serverless). Plain files skip that conversion.
+#
+# Runs *inside* the Lakeflow Declarative Pipeline itself (it's registered as a pipeline
+# library in `resources/pipeline/example_etl_pipeline.pipeline.yml`), using expectations
+# to assert on the actual bronze/silver/gold tables the pipeline just built — not mocks.
+#
+# In dev/staging this checks exact row counts against the known size of the sample data
+# for that target. In prod, row counts vary run to run, so only the gold table's shape is
+# checked (i.e. "did this run produce sane categories," not "did it produce N rows").
+#
+# See "Portable and reusable expectations":
+# https://docs.databricks.com/en/delta-live-tables/expectation-patterns.html
 
 import dlt
 
 target = spark.conf.get("target")
-
-# COMMAND ----------
 
 # Expected row counts for the bundled sample data (sample_data/orders_sample.csv, 20 rows)
 # in each non-prod target. Update these if you swap in your own sample data — staging is
@@ -38,8 +39,6 @@ if target in target_integration_tests_validation:
     expected_counts = target_integration_tests_validation[target]
     total_expected_bronze = expected_counts["orders_bronze"]["total_rows"]
     total_expected_silver = expected_counts["orders_silver"]["total_rows"]
-
-# COMMAND ----------
 
 
 def test_count_table_total_rows(table_name, total_count, target):
@@ -66,8 +65,6 @@ def test_gold_table_columns():
     def test_gold_table_categories():
         return dlt.read("sales_by_region_band").select("region", "order_value_band")
 
-
-# COMMAND ----------
 
 if target in ("dev", "staging"):
     test_count_table_total_rows("orders_bronze", total_expected_bronze, target)
